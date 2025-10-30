@@ -30,16 +30,17 @@ app.get("/", (req, res) => {
 // Status endpoint
 app.get("/status", async (req, res) => {
   try {
-    const [countResult] = await pool.query(
+    const countResult = await pool.query(
       "SELECT COUNT(*) as count FROM countries"
     );
-    const [metadataResult] = await pool.query(
-      "SELECT value FROM metadata WHERE key_name = 'last_refreshed_at'"
+    const metadataResult = await pool.query(
+      "SELECT value FROM metadata WHERE key_name = $1",
+      ["last_refreshed_at"]
     );
 
     res.json({
-      total_countries: countResult[0].count,
-      last_refreshed_at: metadataResult[0]?.value || null,
+      total_countries: parseInt(countResult.rows[0].count),
+      last_refreshed_at: metadataResult.rows[0]?.value || null,
     });
   } catch (error) {
     console.error("Error getting status:", error);
@@ -54,40 +55,42 @@ app.use("/countries", countryRoutes);
 async function startServer() {
   try {
     // Test database connection
-    const connection = await pool.getConnection();
+    const connection = await pool.connect();
     console.log("Database connected successfully");
 
     // Create tables if they don't exist
     await connection.query(`
       CREATE TABLE IF NOT EXISTS countries (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         name VARCHAR(255) UNIQUE NOT NULL,
-        capital VARCHAR(255) NULL,
-        region VARCHAR(100) NULL,
+        capital VARCHAR(255),
+        region VARCHAR(100),
         population BIGINT NOT NULL,
-        currency_code VARCHAR(10) NULL,
-        exchange_rate DECIMAL(20,6) NULL,
-        estimated_gdp DECIMAL(30,2) NULL,
-        flag_url TEXT NULL,
-        last_refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_name (name),
-        INDEX idx_region (region),
-        INDEX idx_currency (currency_code)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        currency_code VARCHAR(10),
+        exchange_rate DECIMAL(20,6),
+        estimated_gdp DECIMAL(30,2),
+        flag_url TEXT,
+        last_refreshed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_name ON countries(name);
+      CREATE INDEX IF NOT EXISTS idx_region ON countries(region);
+      CREATE INDEX IF NOT EXISTS idx_currency ON countries(currency_code);
     `);
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS metadata (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
         key_name VARCHAR(100) UNIQUE NOT NULL,
-        value TEXT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     await connection.query(`
-      INSERT IGNORE INTO metadata (key_name, value) 
-      VALUES ('last_refreshed_at', NULL);
+      INSERT INTO metadata (key_name, value) 
+      VALUES ('last_refreshed_at', NULL)
+      ON CONFLICT (key_name) DO NOTHING;
     `);
 
     connection.release();

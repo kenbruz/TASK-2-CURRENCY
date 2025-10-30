@@ -39,19 +39,19 @@ router.post("/refresh", async (req, res) => {
       }
 
       // Check if country exists
-      const [existing] = await pool.query(
-        "SELECT id FROM countries WHERE LOWER(name) = LOWER(?)",
+      const existing = await pool.query(
+        "SELECT id FROM countries WHERE LOWER(name) = LOWER($1)",
         [country.name]
       );
 
-      if (existing.length > 0) {
+      if (existing.rows.length > 0) {
         // Update existing country
         await pool.query(
           `UPDATE countries SET 
-            capital = ?, region = ?, population = ?, 
-            currency_code = ?, exchange_rate = ?, estimated_gdp = ?, 
-            flag_url = ?, last_refreshed_at = NOW()
-          WHERE LOWER(name) = LOWER(?)`,
+            capital = $1, region = $2, population = $3, 
+            currency_code = $4, exchange_rate = $5, estimated_gdp = $6, 
+            flag_url = $7, last_refreshed_at = CURRENT_TIMESTAMP
+          WHERE LOWER(name) = LOWER($8)`,
           [
             country.capital || null,
             country.region || null,
@@ -69,7 +69,7 @@ router.post("/refresh", async (req, res) => {
         await pool.query(
           `INSERT INTO countries 
             (name, capital, region, population, currency_code, exchange_rate, estimated_gdp, flag_url, last_refreshed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
           [
             country.name,
             country.capital || null,
@@ -88,21 +88,21 @@ router.post("/refresh", async (req, res) => {
     // Update last refreshed timestamp
     const timestamp = new Date().toISOString();
     await pool.query(
-      "UPDATE metadata SET value = ?, updated_at = NOW() WHERE key_name = 'last_refreshed_at'",
-      [timestamp]
+      "UPDATE metadata SET value = $1, updated_at = CURRENT_TIMESTAMP WHERE key_name = $2",
+      [timestamp, "last_refreshed_at"]
     );
 
     // Generate summary image
-    const [countResult] = await pool.query(
+    const countResult = await pool.query(
       "SELECT COUNT(*) as count FROM countries"
     );
-    const totalCountries = countResult[0].count;
+    const totalCountries = parseInt(countResult.rows[0].count);
 
-    const [topCountries] = await pool.query(
+    const topCountries = await pool.query(
       "SELECT name, estimated_gdp FROM countries WHERE estimated_gdp IS NOT NULL ORDER BY estimated_gdp DESC LIMIT 5"
     );
 
-    await generateImage(totalCountries, topCountries, timestamp);
+    await generateImage(totalCountries, topCountries.rows, timestamp);
 
     res.json({
       message: `Refreshed ${inserted + updated} countries`,
@@ -126,23 +126,26 @@ router.get("/", async (req, res) => {
 
     let query = "SELECT * FROM countries WHERE 1=1";
     const params = [];
+    let paramCount = 1;
 
     // Add filters
     if (region) {
-      query += " AND region = ?";
+      query += ` AND region = $${paramCount}`;
       params.push(region);
+      paramCount++;
     }
 
     if (currency) {
-      query += " AND currency_code = ?";
+      query += ` AND currency_code = $${paramCount}`;
       params.push(currency);
+      paramCount++;
     }
 
     // Add sorting
     if (sort === "gdp_desc") {
-      query += " ORDER BY estimated_gdp IS NULL, estimated_gdp DESC";
+      query += " ORDER BY estimated_gdp DESC NULLS LAST";
     } else if (sort === "gdp_asc") {
-      query += " ORDER BY estimated_gdp IS NULL, estimated_gdp ASC";
+      query += " ORDER BY estimated_gdp ASC NULLS LAST";
     } else if (sort === "population_desc") {
       query += " ORDER BY population DESC";
     } else if (sort === "population_asc") {
@@ -155,8 +158,8 @@ router.get("/", async (req, res) => {
       query += " ORDER BY id ASC";
     }
 
-    const [countries] = await pool.query(query, params);
-    res.json(countries);
+    const result = await pool.query(query, params);
+    res.json(result.rows);
   } catch (error) {
     console.error("Error getting countries:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -180,16 +183,16 @@ router.get("/image", async (req, res) => {
 // GET /countries/:name - Get single country
 router.get("/:name", async (req, res) => {
   try {
-    const [countries] = await pool.query(
-      "SELECT * FROM countries WHERE LOWER(name) = LOWER(?)",
+    const result = await pool.query(
+      "SELECT * FROM countries WHERE LOWER(name) = LOWER($1)",
       [req.params.name]
     );
 
-    if (countries.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Country not found" });
     }
 
-    res.json(countries[0]);
+    res.json(result.rows[0]);
   } catch (error) {
     console.error("Error getting country:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -199,12 +202,12 @@ router.get("/:name", async (req, res) => {
 // DELETE /countries/:name - Delete country
 router.delete("/:name", async (req, res) => {
   try {
-    const [result] = await pool.query(
-      "DELETE FROM countries WHERE LOWER(name) = LOWER(?)",
+    const result = await pool.query(
+      "DELETE FROM countries WHERE LOWER(name) = LOWER($1)",
       [req.params.name]
     );
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: "Country not found" });
     }
 
