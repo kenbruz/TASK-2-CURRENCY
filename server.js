@@ -22,7 +22,6 @@ app.get("/", (req, res) => {
       getOne: "GET /countries/:name",
       delete: "DELETE /countries/:name",
       status: "GET /status",
-      image: "GET /countries/image",
     },
   });
 });

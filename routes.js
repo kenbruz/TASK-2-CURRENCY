@@ -5,9 +5,7 @@ const {
   fetchCountriesAPI,
   fetchRatesAPI,
   getRandomMultiplier,
-  generateImage,
-  imageExists,
-  getImagePath,
+
 } = require("./helpers");
 
 // POST /countries/refresh - Fetch and cache country data
@@ -92,17 +90,6 @@ router.post("/refresh", async (req, res) => {
       [timestamp, "last_refreshed_at"]
     );
 
-    // Generate summary image
-    const countResult = await pool.query(
-      "SELECT COUNT(*) as count FROM countries"
-    );
-    const totalCountries = parseInt(countResult.rows[0].count);
-
-    const topCountries = await pool.query(
-      "SELECT name, estimated_gdp FROM countries WHERE estimated_gdp IS NOT NULL ORDER BY estimated_gdp DESC LIMIT 5"
-    );
-
-    await generateImage(totalCountries, topCountries.rows, timestamp);
 
     res.json({
       message: `Refreshed ${inserted + updated} countries`,
@@ -166,19 +153,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /countries/image - Serve summary image
-router.get("/image", async (req, res) => {
-  try {
-    const exists = await imageExists();
-    if (!exists) {
-      return res.status(404).json({ error: "Summary image not found" });
-    }
-    res.sendFile(getImagePath());
-  } catch (error) {
-    console.error("Error serving image:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+
 
 // GET /countries/:name - Get single country
 router.get("/:name", async (req, res) => {
