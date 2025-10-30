@@ -20,7 +20,6 @@
     "pg": "^8.11.3",
     "dotenv": "^16.3.1",
     "axios": "^1.6.2",
-    "canvas": "^2.11.2",
     "cors": "^2.8.5"
   },
   "devDependencies": {
